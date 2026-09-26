@@ -1,0 +1,60 @@
+{
+  "_comment": "WorkFlowOS MVP Demo seed data. Used for hackathon demonstration.",
+  "customers": [
+    {
+      "customer_id": "CUS-001",
+      "name": "Acme Corp",
+      "email": "support@acme.com",
+      "plan": "Enterprise",
+      "status": "active"
+    },
+    {
+      "customer_id": "CUS-002",
+      "name": "Globex Industries",
+      "email": "contact@globex.io",
+      "plan": "Pro",
+      "status": "active"
+    },
+    {
+      "customer_id": "CUS-003",
+      "name": "Initech Solutions",
+      "email": "hello@initech.dev",
+      "plan": "Starter",
+      "status": "trial"
+    }
+  ],
+  "emails": [
+    {
+      "email_id": "email-001",
+      "customer_email": "support@acme.com",
+      "subject": "Feature Request: Bulk Export",
+      "attachment": "acme_requirements.pdf"
+    },
+    {
+      "email_id": "email-002",
+      "customer_email": "contact@globex.io",
+      "subject": "Integration Issue: Salesforce Sync",
+      "attachment": "globex_sync_logs.zip"
+    },
+    {
+      "email_id": "email-003",
+      "customer_email": "hello@initech.dev",
+      "subject": "Onboarding Request: API Access",
+      "attachment": "initech_api_request.docx"
+    }
+  ],
+  "workflow_pattern": {
+    "name": "Process Customer Request",
+    "steps": [
+      "Gmail: opened",
+      "Gmail: open_email",
+      "Gmail: download attachment",
+      "CRM: opened",
+      "CRM: find_customer",
+      "CRM: update_customer",
+      "Slack: send_message"
+    ],
+    "expected_trigger": "New customer request email received",
+    "expected_intent": "Process Customer Request"
+  }
+}
