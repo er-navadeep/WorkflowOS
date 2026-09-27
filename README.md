@@ -97,12 +97,12 @@ Before running WorkFlowOS, ensure the following tools are installed:
 
 ## 🔑 Environment Configuration
 
-Create a `.env` file in the project root (or inside `backend/`):
+Create a `.env` file in the project root:
 
 ```bash
 # MongoDB Connection
 MONGODB_URI=mongodb://127.0.0.1:27017
-DATABASE_NAME=workflow_os
+MONGODB_DATABASE=workflow_os
 
 # Google Gemini API (AI Understanding & Generation)
 GEMINI_API_KEY=your_gemini_api_key_here
@@ -112,6 +112,7 @@ GOOGLE_CLIENT_ID=your_client_id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your_client_secret
 GOOGLE_REFRESH_TOKEN=your_refresh_token
 GMAIL_USER_ID=me
+GMAIL_MAX_ATTACHMENT_SIZE_BYTES=10485760
 
 # Slack Webhook Integration
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00/B00/XXXX
@@ -126,7 +127,68 @@ TRIGGER_MAX_CONCURRENT_EXECUTIONS=3
 VITE_API_URL=http://localhost:8000
 ```
 
-> **Security Note**: Never commit `.env` or credentials to source control. WorkFlowOS strictly ensures zero secrets are leaked in logs, database records, API payloads, or client bundles.
+> **Security Note**: Never commit `.env`, `credentials.json`, or token files to source control. WorkFlowOS strictly ensures zero secrets are leaked in logs, database records, API payloads, or client bundles.
+
+---
+
+## ⚙️ Service Setup Guides
+
+### 1. 🗄️ MongoDB Setup
+WorkFlowOS requires MongoDB 6.0+ listening on `mongodb://127.0.0.1:27017`.
+- **Windows (Service)**: If installed as a Windows Service, MongoDB starts automatically.
+- **Manual Start (Windows)**:
+  ```powershell
+  mongod --dbpath "C:\data\db"
+  ```
+- **Linux / macOS**:
+  ```bash
+  sudo systemctl start mongod
+  # or via brew:
+  brew services start mongodb-community
+  ```
+- **Docker Container**:
+  ```bash
+  docker run -d -p 27017:27017 --name workflowos-mongo mongo:latest
+  ```
+- **Verify Connection**:
+  ```powershell
+  python tests/verify_mongodb.py
+  ```
+
+### 2. 🤖 Google Gemini API Setup
+WorkFlowOS leverages Google Gemini for AI workflow understanding and multi-step workflow synthesis.
+1. Visit [Google AI Studio](https://aistudio.google.com/).
+2. Click **Get API key** and generate an API key for your Google Cloud / AI project.
+3. Add the key to your `.env` file:
+   ```bash
+   GEMINI_API_KEY=your_gemini_api_key_here
+   ```
+4. Default model is `gemini-3.8-flash`. You can override it if desired via `GEMINI_MODEL`.
+
+### 3. 📧 Gmail OAuth Setup (Read-Only)
+WorkFlowOS connects to the official Gmail API v1 with strictly scoped read-only permissions (`https://www.googleapis.com/auth/gmail.readonly`).
+1. In the [Google Cloud Console](https://console.cloud.google.com/apis/credentials), enable the **Gmail API**.
+2. Configure the **OAuth Consent Screen** with your Gmail address listed under **Test users**.
+3. Create credentials: **Create Credentials** → **OAuth client ID** → Application type: **Desktop app**.
+4. Download the client secret JSON file and place it in the project root as `credentials.json` (git-ignored).
+5. Run the built-in local OAuth helper:
+   ```powershell
+   python scripts/gmail_oauth_setup.py
+   ```
+6. A browser tab will open automatically. Sign in with your test user and grant read-only access.
+7. The script will write tokens safely to `.gmail_token.local`. Copy `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `GOOGLE_REFRESH_TOKEN` into your `.env` file.
+8. Delete `.gmail_token.local` once copied.
+*(For comprehensive troubleshooting, refer to [docs/GMAIL_OAUTH_SETUP_GUIDE.md](docs/GMAIL_OAUTH_SETUP_GUIDE.md)).*
+
+### 4. 💬 Slack Webhook Setup
+WorkFlowOS delivers automated team notifications upon successful request processing.
+1. Visit the [Slack API Apps Console](https://api.slack.com/apps) and click **Create New App** (From scratch).
+2. Under **Features**, select **Incoming Webhooks** and activate the feature toggle.
+3. Click **Add New Webhook to Workspace** and select the destination channel (e.g., `#customer-ops` or `#alerts`).
+4. Copy the generated Webhook URL and add it to your `.env`:
+   ```bash
+   SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T00/B00/XXXX
+   ```
 
 ---
 
@@ -323,3 +385,27 @@ npm run build
 - **Log Redaction**: Execution logs, step payloads, and error summaries scrub OAuth tokens, Authorization headers, and webhook URLs.
 - **Read-Only Scopes**: Gmail integration strictly requests `https://www.googleapis.com/auth/gmail.readonly`.
 - **Local Mock CRM**: Customer data is maintained in a local isolated MongoDB collection (`mock_crm_customers`) to prevent accidental external CRM modification.
+
+---
+
+## ⚠️ Known Limitations
+
+1. **Read-Only Gmail API Scope**:
+   - By intentional security design, WorkFlowOS requests only `https://www.googleapis.com/auth/gmail.readonly`.
+   - The system inspects incoming emails and downloads relevant attachments, but does not send emails, mark emails as read, delete, or modify user inboxes.
+
+2. **Local Mock CRM Scope**:
+   - Customer records, lookup queries, and status updates are managed inside an isolated local MongoDB collection (`mock_crm_customers`).
+   - This prevents accidental mutations to external production CRMs (e.g., Salesforce, HubSpot) during hackathon evaluation and testing.
+
+3. **Desktop Loopback OAuth Flow**:
+   - Generating the initial Gmail OAuth refresh token requires interactive browser authorization through a local ephemeral loopback server (`http://localhost:<ephemeral-port>`).
+   - In headless or containerized environments without a GUI browser, users should run `python scripts/gmail_oauth_setup.py --show-url` and complete authentication via a desktop browser.
+
+4. **External AI Rate Limiting & High-Demand Spikes**:
+   - Google Gemini API calls are subject to upstream provider availability and rate limits.
+   - During heavy upstream traffic, free-tier keys may experience temporary `503 UNAVAILABLE` spikes. Standard tier / paid quota keys are recommended for high-frequency polling.
+
+5. **Single-Instance Background Scheduler**:
+   - The built-in `TriggerScheduler` runs as an in-process asynchronous background task within the FastAPI application.
+   - For multi-instance horizontal scaling, a distributed coordination mechanism (e.g., Redis distributed lock / Celery beat) would be required to prevent overlapping polling intervals across nodes.

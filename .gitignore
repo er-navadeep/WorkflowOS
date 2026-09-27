@@ -20,7 +20,9 @@ token.json
 
 # Runtime storage & downloads (Phase 8.7)
 backend/runtime/
+backend/app/runtime/
 runtime/
 downloads/
+*.zip
 
 
