@@ -79,6 +79,10 @@ export function IntegrationBadge({ application }) {
 export function WorkflowTrigger({ trigger }) {
   if (!trigger) return null;
 
+  const eventLabel = trigger.event === 'customer_email_received' 
+    ? 'New customer request received in Gmail' 
+    : trigger.event;
+
   return (
     <div className="p-3.5 rounded-xl bg-surface-elevated/40 border border-surface-border flex items-start gap-3">
       <div className="w-8 h-8 rounded-lg bg-primary-950/60 border border-primary-800/50 flex items-center justify-center text-primary-400 shrink-0">
@@ -89,10 +93,10 @@ export function WorkflowTrigger({ trigger }) {
           <span className="text-xs font-semibold uppercase tracking-wider text-primary-400">Trigger</span>
           <IntegrationBadge application={trigger.application} />
         </div>
-        <p className="text-sm font-medium text-slate-200 mt-1 truncate">{trigger.event}</p>
-        {trigger.description && (
-          <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{trigger.description}</p>
-        )}
+        <p className="text-sm font-semibold text-white mt-1 truncate">{eventLabel}</p>
+        <p className="text-xs text-slate-400 mt-0.5">
+          {trigger.description || 'Triggered when a new customer request email is received in Gmail.'}
+        </p>
       </div>
     </div>
   );
@@ -101,6 +105,7 @@ export function WorkflowTrigger({ trigger }) {
 export function WorkflowStep({ step, isLast, showDetails = true }) {
   const inputs = Array.isArray(step.inputs) ? step.inputs : [];
   const outputs = Array.isArray(step.outputs) ? step.outputs : [];
+  const isOpenEmail = (step.action || '').toLowerCase() === 'open_email';
 
   return (
     <div className="relative flex items-start gap-3 group">
@@ -116,11 +121,20 @@ export function WorkflowStep({ step, isLast, showDetails = true }) {
 
       {/* Step Card */}
       <div className="flex-1 pb-4">
-        <div className="p-3.5 rounded-xl bg-surface/60 border border-surface-border group-hover:border-slate-700 transition-colors space-y-2">
+        <div className={`p-3.5 rounded-xl border transition-colors space-y-2 ${
+          isOpenEmail
+            ? 'bg-cyan-950/15 border-cyan-900/40 group-hover:border-cyan-700/60'
+            : 'bg-surface/60 border border-surface-border group-hover:border-slate-700'
+        }`}>
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-white font-mono">{step.action || step.name}</span>
               <IntegrationBadge application={step.application} />
+              {isOpenEmail && (
+                <span className="text-2xs font-mono px-2 py-0.5 rounded border text-cyan-300 bg-cyan-950/50 border-cyan-800/60">
+                  Internal detail of Action 1
+                </span>
+              )}
             </div>
 
             {step.on_failure && (
@@ -172,20 +186,216 @@ export function WorkflowStep({ step, isLast, showDetails = true }) {
 }
 
 export function WorkflowStepList({ steps = [], showDetails = true }) {
+  const [viewMode, setViewMode] = React.useState('business');
+
   if (!steps.length) {
     return <p className="text-xs text-slate-500 italic">No execution steps defined.</p>;
   }
 
+  // Check if steps represent canonical 6-step integration
+  const isCanonical6 = steps.length === 6 &&
+    steps.some(s => (s.action || '').toLowerCase() === 'read_email') &&
+    steps.some(s => (s.action || '').toLowerCase() === 'open_email');
+
+  if (!isCanonical6) {
+    return (
+      <div className="space-y-1 mt-2">
+        {steps.map((step, idx) => (
+          <WorkflowStep 
+            key={step.step_id || step.order || idx} 
+            step={step} 
+            isLast={idx === steps.length - 1} 
+            showDetails={showDetails}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // Define the Official 5 Business Actions
+  const businessActions = [
+    {
+      order: 1,
+      title: "Read the email and identify the customer",
+      application: "Gmail",
+      action: "read_email + open_email",
+      description: "Read incoming customer request email and identify the customer from headers and message payload.",
+      internalNote: "open_email is an internal technical detail of this action used to retrieve headers and message structure.",
+      inputs: ["query", "max_results", "messageId"],
+      outputs: ["messageId", "sender", "subject", "snippet"],
+      technicalSteps: "Steps 1 & 2 (read_email + open_email)",
+    },
+    {
+      order: 2,
+      title: "Download the relevant attachment",
+      application: "Gmail",
+      action: "download_file",
+      description: "Download the relevant customer attachment file safely into application storage.",
+      inputs: ["messageId", "attachmentId", "filename"],
+      outputs: ["filename", "path", "size_bytes"],
+      technicalSteps: "Step 3 (download_file)",
+    },
+    {
+      order: 3,
+      title: "Find the customer in the CRM",
+      application: "CRM",
+      action: "find_customer",
+      description: "Look up customer record in CRM by email or customer identifier.",
+      conditionNote: "If the customer cannot be found: Stop workflow and request human intervention.",
+      inputs: ["customerIdentifier"],
+      outputs: ["customerFound", "customerId", "name", "status"],
+      technicalSteps: "Step 4 (find_customer)",
+      on_failure: "human_intervention",
+    },
+    {
+      order: 4,
+      title: "Update the customer record with the request information and attachment",
+      application: "CRM",
+      action: "update_customer",
+      description: "Update the existing customer record with request notes, attachment details, and status.",
+      inputs: ["customerIdentifier", "updates"],
+      outputs: ["customerFound", "updated", "customerId"],
+      technicalSteps: "Step 5 (update_customer)",
+    },
+    {
+      order: 5,
+      title: "Send a Slack notification to the relevant team",
+      application: "Slack",
+      action: "send_message",
+      description: "Send team notification with request details and delivery confirmation to configured Slack channel.",
+      inputs: ["message"],
+      outputs: ["slack_delivery", "delivery_status"],
+      technicalSteps: "Step 6 (send_message)",
+    },
+  ];
+
   return (
-    <div className="space-y-1 mt-2">
-      {steps.map((step, idx) => (
-        <WorkflowStep 
-          key={step.step_id || step.order || idx} 
-          step={step} 
-          isLast={idx === steps.length - 1} 
-          showDetails={showDetails}
-        />
-      ))}
+    <div className="space-y-3 mt-2">
+      {/* View Toggle */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-surface/50 border border-surface-border">
+        <div className="flex items-center gap-1.5">
+          <span className="text-2xs font-mono uppercase tracking-wider text-slate-400 font-semibold">View:</span>
+          <div className="inline-flex rounded-lg bg-surface-elevated p-0.5 border border-surface-border text-xs font-mono">
+            <button
+              type="button"
+              onClick={() => setViewMode('business')}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                viewMode === 'business'
+                  ? 'bg-primary-600 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              5 Business Actions (Official)
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('technical')}
+              className={`px-3 py-1 rounded-md text-xs font-semibold transition-all ${
+                viewMode === 'technical'
+                  ? 'bg-slate-700 text-cyan-300 shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              6 Technical Steps (Engine)
+            </button>
+          </div>
+        </div>
+        <span className="text-2xs font-mono text-slate-400">
+          {viewMode === 'business'
+            ? 'Official 5-Action Business Specification + Condition'
+            : 'Internal Engine Execution: 6 Technical Steps'}
+        </span>
+      </div>
+
+      {/* Render 5 Business Actions */}
+      {viewMode === 'business' ? (
+        <div className="space-y-1">
+          {businessActions.map((act, idx) => (
+            <div key={act.order} className="relative flex items-start gap-3 group">
+              <div className="w-7 h-7 rounded-full bg-primary-950/80 border border-primary-700/60 flex items-center justify-center text-xs font-mono font-bold text-primary-300 shrink-0 z-10">
+                {act.order}
+              </div>
+
+              {idx < businessActions.length - 1 && (
+                <div className="absolute left-3.5 top-7 bottom-0 w-px bg-surface-border" />
+              )}
+
+              <div className="flex-1 pb-4">
+                <div className="p-4 rounded-xl bg-surface/70 border border-surface-border group-hover:border-slate-700 transition-colors space-y-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-white tracking-tight">
+                        Action {act.order}: {act.title}
+                      </span>
+                      <IntegrationBadge application={act.application} />
+                    </div>
+
+                    <span className="text-2xs font-mono text-slate-400 bg-surface-elevated/70 px-2 py-0.5 rounded border border-surface-border">
+                      {act.technicalSteps}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">{act.description}</p>
+
+                  {/* Internal implementation note for Action 1 */}
+                  {act.internalNote && (
+                    <div className="p-2 rounded-lg bg-cyan-950/30 border border-cyan-800/40 text-2xs text-cyan-300 font-mono flex items-center gap-2">
+                      <span className="font-bold text-cyan-400 shrink-0">Internal Detail:</span>
+                      <span>{act.internalNote}</span>
+                    </div>
+                  )}
+
+                  {/* Condition note for Action 3 */}
+                  {act.conditionNote && (
+                    <div className="p-2 rounded-lg bg-amber-950/30 border border-amber-800/40 text-2xs text-amber-300 font-mono flex items-center gap-2">
+                      <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span className="font-bold text-amber-400 shrink-0">Condition Guard:</span>
+                      <span>{act.conditionNote}</span>
+                    </div>
+                  )}
+
+                  {showDetails && (
+                    <div className="pt-2 border-t border-surface-border/50 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-2xs font-mono">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-slate-500 font-semibold">Inputs:</span>
+                        {act.inputs.map((inp, i) => (
+                          <span key={i} className="bg-surface-elevated/70 text-cyan-300 px-1.5 py-0.5 rounded border border-surface-border">
+                            {inp}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-slate-500 font-semibold">Outputs:</span>
+                        {act.outputs.map((out, i) => (
+                          <span key={i} className="bg-surface-elevated/70 text-emerald-300 px-1.5 py-0.5 rounded border border-surface-border">
+                            {out}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* Render 6 Technical Steps */
+        <div className="space-y-1">
+          <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-700/60 text-2xs font-mono text-slate-300 flex items-center gap-2 mb-2">
+            <span className="text-cyan-400 font-bold shrink-0">ENGINE EXECUTION VIEW:</span>
+            <span>6 technical steps executed in sequence. Step 2 (open_email) is an internal technical detail of Action 1.</span>
+          </div>
+          {steps.map((step, idx) => (
+            <WorkflowStep 
+              key={step.step_id || step.order || idx} 
+              step={step} 
+              isLast={idx === steps.length - 1} 
+              showDetails={showDetails}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -194,10 +404,10 @@ export function WorkflowCondition({ condition }) {
   if (!condition) return null;
 
   return (
-    <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-900/30 text-xs space-y-1.5">
+    <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-900/40 text-xs space-y-2">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 text-amber-400 font-semibold uppercase tracking-wider text-2xs font-mono">
-          <ShieldCheck className="w-3.5 h-3.5" />
+          <ShieldCheck className="w-4 h-4 text-amber-400" />
           <span>Condition Guard</span>
         </div>
         <span className="text-2xs font-mono text-slate-500">
@@ -205,34 +415,26 @@ export function WorkflowCondition({ condition }) {
         </span>
       </div>
 
-      {condition.description && (
-        <p className="text-xs font-medium text-slate-200">{condition.description}</p>
-      )}
+      <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-800/50">
+        <p className="text-xs font-bold text-amber-200">
+          If the customer cannot be found: Stop the workflow and request human intervention.
+        </p>
+        <p className="text-2xs text-slate-300 mt-1 leading-relaxed">
+          Execution halts at find_customer. Status transitions to NEEDS_INTERVENTION. 
+          update_customer and Slack notifications are NOT executed.
+        </p>
+      </div>
 
       {condition.expression && (
         <div className="p-2 rounded bg-surface/60 border border-surface-border font-mono text-xs text-amber-300">
           <span className="text-slate-500 mr-2">EXPR:</span>
-          {condition.expression}
-        </div>
-      )}
-
-      {(condition.on_true || condition.on_false) && (
-        <div className="flex items-center gap-3 pt-1 text-2xs font-mono">
-          {condition.on_true && (
-            <span className="text-slate-300">
-              <span className="text-emerald-400 font-bold">ON TRUE:</span> {condition.on_true}
-            </span>
-          )}
-          {condition.on_false && (
-            <span className="text-slate-300">
-              <span className="text-rose-400 font-bold">ON FALSE:</span> {condition.on_false}
-            </span>
-          )}
+          {condition.expression} &rarr; on_true: {condition.on_true || 'request_human_intervention'}
         </div>
       )}
     </div>
   );
 }
+
 
 export function WorkflowVariablesList({ variables = [] }) {
   if (!variables.length) {

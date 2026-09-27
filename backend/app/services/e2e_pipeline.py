@@ -38,6 +38,7 @@ from app.models.mock_crm import ensure_seed_data
 from app.models.workflow import upsert_workflow
 from app.schemas.execution import ExecutionMode, ExecutionStatus, WorkflowExecution
 from app.schemas.workflow import (
+    WorkflowCondition,
     WorkflowDefinition,
     WorkflowErrorHandling,
     WorkflowIntegration,
@@ -51,9 +52,12 @@ logger = logging.getLogger(__name__)
 
 E2E_WORKFLOW_NAME = "Gmail to CRM to Slack End-to-End Pipeline"
 E2E_WORKFLOW_DESCRIPTION = (
-    "End-to-end multi-step workflow: reads customer email from Gmail, opens the message, "
-    "downloads attachment, looks up customer in local mock CRM, updates customer status "
-    "and notes, and posts a delivery confirmation alert to Slack."
+    "Process Customer Request (Official 5 Business Actions): "
+    "Action 1: Read the email and identify the customer (internal technical detail: read_email + open_email) | "
+    "Action 2: Download the relevant attachment | "
+    "Action 3: Find the customer in the CRM (Condition: If customer cannot be found, stop workflow and request human intervention) | "
+    "Action 4: Update the customer record with the request information and attachment | "
+    "Action 5: Send a Slack notification to the relevant team."
 )
 
 DEFAULT_TEST_IDENTIFIER = "nav@example.test"
@@ -90,7 +94,7 @@ def build_e2e_pipeline_workflow(
             order=1,
             application="Gmail",
             action="read_email",
-            description="Query inbox for incoming customer emails.",
+            description="Action 1: Read the email and identify the customer (queries matching incoming customer email).",
             inputs=["query", "max_results"],
             outputs=[
                 "message_ids",
@@ -110,7 +114,7 @@ def build_e2e_pipeline_workflow(
             order=2,
             application="Gmail",
             action="open_email",
-            description="Retrieve metadata and headers for the selected email.",
+            description="Action 1 (Internal Implementation Detail): Open email headers and payload to identify the customer.",
             inputs=["messageId"],
             outputs=[
                 "messageId",
@@ -130,7 +134,7 @@ def build_e2e_pipeline_workflow(
             order=3,
             application="Gmail",
             action="download_file",
-            description="Download email attachment file safely into application storage.",
+            description="Action 2: Download the relevant attachment safely into application storage.",
             inputs=["messageId", "attachmentId", "filename"],
             outputs=[
                 "filename",
@@ -147,7 +151,7 @@ def build_e2e_pipeline_workflow(
             order=4,
             application="CRM",
             action="find_customer",
-            description="Look up customer record in local mock CRM by identifier/email.",
+            description="Action 3: Find the customer in the CRM (If customer cannot be found, stop workflow and request human intervention).",
             inputs=["customerIdentifier"],
             outputs=[
                 "customerFound",
@@ -157,14 +161,14 @@ def build_e2e_pipeline_workflow(
                 "company",
                 "status",
             ],
-            on_failure="stop",
+            on_failure="human_intervention",
         ),
         WorkflowStep(
             step_id=f"step-5-update-customer-{uuid.uuid4().hex[:6]}",
             order=5,
             application="CRM",
             action="update_customer",
-            description="Update customer status and notes in local mock CRM.",
+            description="Action 4: Update the customer record with the request information and attachment.",
             inputs=["customerIdentifier", "updates"],
             outputs=[
                 "customerFound",
@@ -181,7 +185,7 @@ def build_e2e_pipeline_workflow(
             order=6,
             application="Slack",
             action="send_message",
-            description="Send completion notification message to Slack channel.",
+            description="Action 5: Send a Slack notification to the relevant team.",
             inputs=["message"],
             outputs=["slack_delivery"],
             on_failure="stop",
@@ -216,6 +220,15 @@ def build_e2e_pipeline_workflow(
         WorkflowVariable(name="message", description="Notification message text for Slack alert"),
     ]
 
+    conditions = [
+        WorkflowCondition(
+            description="If customer cannot be found in CRM, stop workflow and request human intervention",
+            expression="customerFound == False",
+            on_true="request_human_intervention",
+            on_false="continue",
+        )
+    ]
+
     error_handling = WorkflowErrorHandling(
         on_step_failure="stop_and_report",
         on_missing_input="stop",
@@ -237,6 +250,7 @@ def build_e2e_pipeline_workflow(
         steps=steps,
         integrations=integrations,
         variables=variables,
+        conditions=conditions,
         error_handling=error_handling,
         status=status,
         reviewed_by="developer_verification" if status == "approved" else None,
@@ -280,6 +294,26 @@ def get_or_create_e2e_workflow(
                     "send_message",
                 ]
                 if actions == expected:
+                    needs_update = False
+                    if not wf.conditions:
+                        wf.conditions = [
+                            WorkflowCondition(
+                                description="If customer cannot be found in CRM, stop workflow and request human intervention",
+                                expression="customerFound == False",
+                                on_true="request_human_intervention",
+                                on_false="continue",
+                            )
+                        ]
+                        needs_update = True
+                    for s in wf.steps:
+                        if s.action == "find_customer" and s.on_failure != "human_intervention":
+                            s.on_failure = "human_intervention"
+                            needs_update = True
+                    if wf.description != E2E_WORKFLOW_DESCRIPTION:
+                        wf.description = E2E_WORKFLOW_DESCRIPTION
+                        needs_update = True
+                    if needs_update:
+                        upsert_workflow(wf)
                     return wf
         except Exception:
             continue

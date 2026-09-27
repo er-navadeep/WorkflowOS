@@ -83,6 +83,37 @@ export function ExecutionStepList({ steps = [] }) {
                 <span className="text-xs font-mono text-slate-300 bg-surface px-2 py-0.5 rounded border border-surface-border">
                   {step.action}
                 </span>
+
+                {step.action === 'open_email' && (
+                  <span className="text-2xs font-mono text-cyan-300 bg-cyan-950/40 border border-cyan-800/40 px-2 py-0.5 rounded">
+                    Internal detail of Action 1
+                  </span>
+                )}
+                {step.action === 'read_email' && (
+                  <span className="text-2xs font-mono text-slate-400 bg-surface px-2 py-0.5 rounded">
+                    Action 1: Read Email
+                  </span>
+                )}
+                {step.action === 'download_file' && (
+                  <span className="text-2xs font-mono text-slate-400 bg-surface px-2 py-0.5 rounded">
+                    Action 2: Download Attachment
+                  </span>
+                )}
+                {step.action === 'find_customer' && (
+                  <span className="text-2xs font-mono text-slate-400 bg-surface px-2 py-0.5 rounded">
+                    Action 3: Find Customer
+                  </span>
+                )}
+                {step.action === 'update_customer' && (
+                  <span className="text-2xs font-mono text-slate-400 bg-surface px-2 py-0.5 rounded">
+                    Action 4: Update CRM
+                  </span>
+                )}
+                {step.action === 'send_message' && (
+                  <span className="text-2xs font-mono text-slate-400 bg-surface px-2 py-0.5 rounded">
+                    Action 5: Slack Notification
+                  </span>
+                )}
               </div>
 
               {/* Step Status Badge */}

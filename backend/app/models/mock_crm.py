@@ -212,6 +212,7 @@ def find_customer_by_identifier(identifier: str) -> Optional[Dict[str, Any]]:
                 "$or": [
                     {"customer_identifier": normalized},
                     {"email": normalized},
+                    {"customer_id": identifier.strip().upper()},
                 ]
             },
             {"_id": 0},
@@ -345,6 +346,7 @@ def update_customer_by_identifier(
                 "$or": [
                     {"customer_identifier": normalized_id},
                     {"email": normalized_id},
+                    {"customer_id": identifier.strip().upper()},
                 ]
             },
             {"$set": validated},       # we construct $set ourselves — never from user input

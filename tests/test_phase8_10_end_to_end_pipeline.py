@@ -152,9 +152,15 @@ class TestPipelineDefinition:
 # ===========================================================================
 
 class TestPipelineApprovalGuard:
+    def teardown_method(self, _method):
+        from app.database.mongodb import get_database
+        if hasattr(self, "_test_wf_ids") and self._test_wf_ids:
+            get_database()["workflows"].delete_many({"workflow_id": {"$in": self._test_wf_ids}})
+
     def test_generated_status_blocked_from_live(self):
         wf = build_e2e_pipeline_workflow(status="generated")
         upsert_workflow(wf)
+        self._test_wf_ids = getattr(self, "_test_wf_ids", []) + [wf.workflow_id]
         with pytest.raises(WorkflowNotApprovedError) as exc_info:
             execute_live(wf.workflow_id)
         assert "cannot be executed" in str(exc_info.value)
@@ -163,6 +169,7 @@ class TestPipelineApprovalGuard:
     def test_rejected_status_blocked_from_live(self):
         wf = build_e2e_pipeline_workflow(status="rejected")
         upsert_workflow(wf)
+        self._test_wf_ids = getattr(self, "_test_wf_ids", []) + [wf.workflow_id]
         with pytest.raises(WorkflowNotApprovedError) as exc_info:
             execute_live(wf.workflow_id)
         assert exc_info.value.current_status == "rejected"
@@ -170,6 +177,7 @@ class TestPipelineApprovalGuard:
     def test_generated_status_blocked_from_dry_run(self):
         wf = build_e2e_pipeline_workflow(status="generated")
         upsert_workflow(wf)
+        self._test_wf_ids = getattr(self, "_test_wf_ids", []) + [wf.workflow_id]
         with pytest.raises(WorkflowNotApprovedError) as exc_info:
             execute_dry_run(wf.workflow_id)
         assert exc_info.value.current_status == "generated"
@@ -525,3 +533,93 @@ class TestPipelineIdempotencyAndSafety:
         for app_name, act_name in expected_pairs:
             adapter = reg.get_adapter(app_name, act_name)
             assert adapter is not None, f"Missing adapter for {app_name} / {act_name}"
+
+
+# ===========================================================================
+# 7. Customer Not Found Human Intervention Path (Part 9 Mandatory)
+# ===========================================================================
+
+class TestPipelineCustomerNotFoundIntervention:
+    """
+    Mandatory compliance test for Part 9:
+    Gmail -> read email -> open email -> download attachment -> find customer
+    -> Customer NOT FOUND -> STOP -> NEEDS_INTERVENTION.
+
+    Guarantees:
+    - Step 5 (update_customer) is NOT called
+    - Step 6 (Slack notification) is NOT called
+    - No fake customer record is created in CRM
+    - Status is strictly NEEDS_INTERVENTION
+    - Paused at step 4
+    - Clear intervention guidance is persisted
+    """
+
+    @patch.object(GmailAdapter, "execute")
+    @patch.object(CRMAdapter, "execute")
+    @patch.object(SlackAdapter, "execute")
+    def test_customer_not_found_stops_workflow_and_requires_intervention(
+        self, mock_slack, mock_crm, mock_gmail
+    ):
+        # Steps 1-3 Gmail succeed
+        mock_gmail.side_effect = [
+            StepExecutionResult(
+                success=True,
+                status=ExecutionStepStatus.COMPLETED,
+                outputs={"messageId": "msg-unknown-001", "sender": "ghost@unregistered.test"},
+                result_summary="Gmail read_email completed.",
+            ),
+            StepExecutionResult(
+                success=True,
+                status=ExecutionStepStatus.COMPLETED,
+                outputs={"subject": "Inquiry from Unknown Sender"},
+                result_summary="Gmail open_email completed.",
+            ),
+            StepExecutionResult(
+                success=True,
+                status=ExecutionStepStatus.COMPLETED,
+                outputs={"filename": "doc.pdf", "path": "downloads/doc.pdf"},
+                result_summary="Gmail download_file completed.",
+            ),
+        ]
+
+        # Step 4: CRM find_customer returns customerFound=False
+        step4_res = StepExecutionResult(
+            success=True,
+            status=ExecutionStepStatus.COMPLETED,
+            outputs={"customerFound": False},
+            result_summary="CRM find_customer: customer 'ghost@unregistered.test' not found.",
+        )
+        mock_crm.return_value = step4_res
+
+        wf = build_e2e_pipeline_workflow(status="approved")
+        upsert_workflow(wf)
+
+        variables = build_default_pipeline_variables(
+            customer_identifier="ghost@unregistered.test"
+        )
+
+        execution = execute_live(workflow_id=wf.workflow_id, variables=variables)
+
+        # 1. Workflow stopped with NEEDS_INTERVENTION
+        assert execution.status == ExecutionStatus.NEEDS_INTERVENTION
+
+        # 2. Stopped at step 4 (find_customer)
+        assert execution.failed_step == 4
+        assert execution.completed_steps == 3
+        assert len(execution.step_records) == 4
+
+        # 3. Step 4 is recorded
+        assert execution.step_records[3].application == "CRM"
+        assert execution.step_records[3].action == "find_customer"
+
+        # 4. Step 5 (update_customer) and Step 6 (Slack) NEVER called
+        # mock_crm called only ONCE (for find_customer, never for update_customer)
+        assert mock_crm.call_count == 1
+        assert mock_slack.call_count == 0
+
+        # 5. Clear explanation persisted
+        assert "not found in CRM" in execution.error_information
+        assert "human intervention" in execution.error_information.lower()
+
+        # 6. Verify ghost customer was NOT created in Mock CRM
+        assert find_customer_by_identifier("ghost@unregistered.test") is None

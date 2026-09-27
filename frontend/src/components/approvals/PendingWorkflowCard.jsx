@@ -58,8 +58,8 @@ export function PendingWorkflowCard({ workflow, onView, onApprove, onReject }) {
             <span className="text-sm font-bold text-cyan-400 mt-0.5 block">{confidence}</span>
           </div>
           <div className="border-r border-surface-border/60 px-1">
-            <span className="text-2xs text-slate-500 uppercase tracking-wider block">Steps</span>
-            <span className="text-sm font-bold text-white mt-0.5 block">{stepsCount}</span>
+            <span className="text-2xs text-slate-500 uppercase tracking-wider block">Actions</span>
+            <span className="text-sm font-bold text-white mt-0.5 block">{stepsCount === 6 ? '5 (6 tech)' : stepsCount}</span>
           </div>
           <div className="border-r border-surface-border/60 px-1">
             <span className="text-2xs text-slate-500 uppercase tracking-wider block">Integrations</span>

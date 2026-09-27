@@ -553,6 +553,47 @@ def execute_live(
         if step_result.success:
             if step_result.outputs:
                 runtime_vars.update(step_result.outputs)
+
+            # Condition Guard: If customer is not found in CRM, evaluate human intervention condition
+            if (
+                step_result.outputs
+                and step_result.outputs.get("customerFound") is False
+            ):
+                has_intervention_condition = (
+                    any(
+                        cond.on_true in ("request_human_intervention", "human_intervention")
+                        for cond in (validated_wf.conditions or [])
+                    )
+                    or step.on_failure == "human_intervention"
+                    or (
+                        validated_wf.error_handling
+                        and validated_wf.error_handling.on_step_failure == "request_human_intervention"
+                    )
+                )
+                if has_intervention_condition:
+                    customer_id_val = (
+                        runtime_vars.get("customerIdentifier")
+                        or runtime_vars.get("sender")
+                        or "unknown"
+                    )
+                    intervention_msg = (
+                        f"Customer '{customer_id_val}' was not found in CRM. "
+                        "Workflow execution stopped and requires human intervention."
+                    )
+                    logger.warning(
+                        "Execution %s stopped at step %d (%s/%s): %s",
+                        execution.execution_id,
+                        step.order,
+                        step.application,
+                        step.action,
+                        intervention_msg,
+                    )
+                    execution.failed_step = step.order
+                    execution.error_information = sanitize_text(intervention_msg)
+                    execution.status = ExecutionStatus.NEEDS_INTERVENTION
+                    has_failed = True
+                    break
+
             execution.completed_steps = step.order
         else:
             execution.failed_step = step.order

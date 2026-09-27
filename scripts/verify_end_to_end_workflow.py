@@ -338,18 +338,74 @@ def main() -> None:
     restored = find_customer_by_identifier(DEFAULT_TEST_IDENTIFIER)
     print(f"  CRM Customer Restored: status='{restored.get('status') if restored else 'unknown'}'")
 
+    print("\n[PART 8 VERIFICATION] SUCCESS PATH COMPLETED SUCCESSFULLY")
+    print("  All 6 steps executed, CRM updated, and seed state restored.")
+
+    # 6. Customer-Not-Found Intervention Path (Part 9 Mandatory Compliance)
+    print("\n[6/6] Executing Customer-Not-Found Intervention Path (Part 9 Compliance)...")
+    unknown_identifier = "ghost-customer-9999@notfound.test"
+    intervention_variables = {
+        "query": "has:attachment",
+        "max_results": 1,
+        "messageId": target_msg_id,
+        "attachmentId": target_att_id,
+        "filename": target_filename,
+        "customerIdentifier": unknown_identifier,
+        "updates": {
+            "status": DEFAULT_TEST_UPDATE_STATUS,
+            "notes": DEFAULT_TEST_UPDATE_NOTES,
+        },
+        "message": "[WorkFlowOS] This message should NEVER be sent to Slack.",
+    }
+
+    print(f"  Testing unknown customer: {unknown_identifier}")
+    intervention_exec = execute_live(wf.workflow_id, variables=intervention_variables)
+
+    print(f"  Execution ID : {intervention_exec.execution_id}")
+    print(f"  Status       : {intervention_exec.status.value}")
+    print(f"  Completed    : {intervention_exec.completed_steps}/{intervention_exec.total_steps} steps")
+    print(f"  Halted Step  : #{intervention_exec.failed_step}")
+    print(f"  Error Info   : {intervention_exec.error_information}")
+    print_step_table(intervention_exec.step_records)
+
+    # Verification checks for Part 9
+    assert intervention_exec.status == ExecutionStatus.NEEDS_INTERVENTION, (
+        f"Expected status {ExecutionStatus.NEEDS_INTERVENTION}, got {intervention_exec.status}"
+    )
+    assert intervention_exec.failed_step == 4, (
+        f"Expected halted at step 4 (find_customer), got {intervention_exec.failed_step}"
+    )
+    assert intervention_exec.completed_steps == 3, (
+        f"Expected 3 completed steps, got {intervention_exec.completed_steps}"
+    )
+    assert len(intervention_exec.step_records) == 4, (
+        f"Expected exactly 4 step records, got {len(intervention_exec.step_records)}"
+    )
+    assert find_customer_by_identifier(unknown_identifier) is None, (
+        f"Unknown customer {unknown_identifier} must NOT have been created in CRM."
+    )
+    print("  [OK] Human intervention path verified: stopped at step 4, status is NEEDS_INTERVENTION, zero fake CRM records, steps 5-6 skipped.")
+
     print("\n================================================================================")
-    print("VERIFICATION COMPLETE: ALL 6 STEPS EXECUTED LIVE SUCCESSFULLY")
+    print("ALL VERIFICATIONS COMPLETE: PART 8 (SUCCESS) & PART 9 (INTERVENTION) PASSED")
     print("================================================================================")
-    print("  Step 1: Gmail / read_email       -> COMPLETED")
-    print("  Step 2: Gmail / open_email       -> COMPLETED")
-    print("  Step 3: Gmail / download_file    -> COMPLETED")
-    print("  Step 4: CRM / find_customer      -> COMPLETED (customerFound=True)")
-    print("  Step 5: CRM / update_customer    -> COMPLETED (updated=True)")
-    print("  Step 6: Slack / send_message     -> COMPLETED (slack_delivery=delivered)")
-    print("  Pipeline Execution Result        : COMPLETED (6/6 steps)")
+    print("  PART 8 (SUCCESS PATH):")
+    print("    Step 1: Gmail / read_email       -> COMPLETED")
+    print("    Step 2: Gmail / open_email       -> COMPLETED")
+    print("    Step 3: Gmail / download_file    -> COMPLETED")
+    print("    Step 4: CRM / find_customer      -> COMPLETED (customerFound=True)")
+    print("    Step 5: CRM / update_customer    -> COMPLETED (updated=True)")
+    print("    Step 6: Slack / send_message     -> COMPLETED (slack_delivery=delivered)")
+    print("    Pipeline Status                  : COMPLETED (6/6 steps)")
+    print("  PART 9 (INTERVENTION PATH):")
+    print("    Customer lookup                  : NOT FOUND (ghost-customer-9999@notfound.test)")
+    print("    Workflow condition               : expression='customerFound == False'")
+    print("    Execution Status                 : NEEDS_INTERVENTION")
+    print("    Halted Step                      : #4 (CRM/find_customer)")
+    print("    CRM update & Slack skipped       : VERIFIED")
     print("================================================================================\n")
 
 
 if __name__ == "__main__":
     main()
+

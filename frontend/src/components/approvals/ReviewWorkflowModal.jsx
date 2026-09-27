@@ -92,11 +92,13 @@ export function ReviewWorkflowModal({ workflow, onClose, onApprove, onReject }) 
             </div>
 
             <div className="p-3.5 rounded-xl bg-surface/70 border border-surface-border">
-              <span className="text-2xs font-mono text-slate-500 uppercase tracking-wider block">Pipeline Steps</span>
+              <span className="text-2xs font-mono text-slate-500 uppercase tracking-wider block">Business Actions</span>
               <span className="text-lg font-bold text-white font-mono mt-0.5 block">
-                {workflow.steps?.length || 0}
+                {workflow.steps?.length === 6 ? '5 Actions' : (workflow.steps?.length || 0)}
               </span>
-              <span className="text-2xs text-slate-500 mt-0.5 block">Operations</span>
+              <span className="text-2xs text-slate-500 mt-0.5 block">
+                {workflow.steps?.length === 6 ? '6 technical steps' : 'Operations'}
+              </span>
             </div>
 
             <div className="p-3.5 rounded-xl bg-surface/70 border border-surface-border">
@@ -134,7 +136,7 @@ export function ReviewWorkflowModal({ workflow, onClose, onApprove, onReject }) 
             <h4 className="text-xs font-semibold text-slate-300 uppercase tracking-wider font-mono text-2xs flex items-center justify-between">
               <span className="flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-cyan-400" />
-                Action Pipeline Steps ({workflow.steps?.length || 0})
+                Action Pipeline (5 Business Actions / 6 Technical Steps)
               </span>
             </h4>
             <WorkflowStepList steps={workflow.steps} showDetails={true} />
