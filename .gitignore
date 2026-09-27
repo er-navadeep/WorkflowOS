@@ -1,4 +1,4 @@
-﻿.venv/
+.venv/
 .env
 __pycache__/
 *.pyc
@@ -9,3 +9,18 @@ build/
 coverage/
 *.log
 .DS_Store
+
+# OAuth Credentials & Tokens (Phase 8.4)
+credentials.json
+client_secret*.json
+token.json
+.gmail_token.local
+*.token
+*.credentials
+
+# Runtime storage & downloads (Phase 8.7)
+backend/runtime/
+runtime/
+downloads/
+
+

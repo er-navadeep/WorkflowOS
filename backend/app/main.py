@@ -86,8 +86,9 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup() -> None:
-    """Verify MongoDB connection on startup so we fail fast if DB is unreachable."""
+    """Verify MongoDB connection and start trigger scheduler on startup."""
     from app.database.mongodb import check_database_connection
+    from app.services.trigger_scheduler import start_trigger_scheduler
 
     try:
         check_database_connection()
@@ -95,9 +96,22 @@ async def startup() -> None:
     except Exception as exc:  # noqa: BLE001
         logger.critical("MongoDB connection FAILED: %s", exc)
 
+    try:
+        await start_trigger_scheduler()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not start trigger scheduler: %s", exc)
+
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    """Stop trigger scheduler cleanly on shutdown."""
+    from app.services.trigger_scheduler import stop_trigger_scheduler
+
+    try:
+        await stop_trigger_scheduler()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Error stopping trigger scheduler: %s", exc)
+
     logger.info("WorkFlowOS API shutting down.")
 
 
@@ -110,6 +124,8 @@ from app.api.discovery import router as discovery_router  # noqa: E402
 from app.api.understanding import router as understanding_router  # noqa: E402
 from app.api.workflow_approval import router as workflow_approval_router  # noqa: E402
 from app.api.workflows import router as workflows_router  # noqa: E402
+from app.api.executions import router as executions_router  # noqa: E402
+from app.api.triggers import router as triggers_router  # noqa: E402
 
 API_PREFIX = "/api/v1"
 
@@ -118,6 +134,9 @@ app.include_router(discovery_router, prefix=API_PREFIX)
 app.include_router(understanding_router, prefix=API_PREFIX)
 app.include_router(workflow_approval_router, prefix=API_PREFIX)
 app.include_router(workflows_router, prefix=API_PREFIX)
+app.include_router(executions_router, prefix=API_PREFIX)
+app.include_router(triggers_router, prefix=API_PREFIX)
+
 
 
 # ---------------------------------------------------------------------------

@@ -7,6 +7,12 @@ from .activity_event import (
     ActivityEventResponse,
     EventType,
 )
+from .trigger import (
+    TriggerCheckpoint,
+    TriggerStatus,
+    WorkflowFeedbackReport,
+    WorkflowTriggerConfig,
+)
 
 __all__ = [
     "ActivityEvent",
@@ -15,4 +21,9 @@ __all__ = [
     "ActivityEventFilter",
     "ActivityEventResponse",
     "EventType",
+    "TriggerCheckpoint",
+    "TriggerStatus",
+    "WorkflowFeedbackReport",
+    "WorkflowTriggerConfig",
 ]
+
